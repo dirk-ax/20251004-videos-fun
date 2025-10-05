@@ -93,6 +93,13 @@ class BaseAgent(ABC):
             # Create default strategy
             return self.create_strategy("default", self.get_default_parameters())
 
+        # Prefer hybrid strategy if available and all strategies are untested
+        all_untested = all(s.total_uses == 0 for s in self.strategies.values())
+        if all_untested:
+            for strategy in self.strategies.values():
+                if strategy.parameters.get("method") == "both":
+                    return strategy
+
         # Score strategies based on multiple factors
         def score_strategy(s: Strategy) -> float:
             if s.total_uses == 0:
@@ -191,8 +198,15 @@ class BaseAgent(ABC):
         """Get default strategy parameters."""
         pass
 
-    # Self-improvement features removed - they were not functional
-    # Strategies are defined at initialization and do not evolve
+    def evolve_strategies(self):
+        """
+        Placeholder for strategy evolution.
+
+        Note: Self-improvement features were removed as they were not functional.
+        Strategies are defined at initialization and do not evolve automatically.
+        This method exists to maintain compatibility with existing code.
+        """
+        pass
 
     def save_memory(self):
         """Persist agent memory to disk."""

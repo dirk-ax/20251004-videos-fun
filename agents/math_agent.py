@@ -39,7 +39,35 @@ class MathAgent(BaseAgent):
 
         method = strategy.parameters.get("method")
 
-        if method == "sympy" or method == "both":
+        # Check for force_numeric flag in task (overrides strategy selection)
+        force_numeric = task.get("force_numeric", False)
+        if force_numeric:
+            method = "numpy"
+
+        # Hybrid strategy: choose based on equation complexity
+        if method == "both":
+            # Parse equation to check complexity
+            x = sp.Symbol(variable)
+            expr = sp.sympify(equation)
+
+            # Decide which method to use based on equation complexity
+            # Use numeric for high-degree polynomials or transcendental equations
+            degree = 0
+            try:
+                if expr.is_polynomial(x):
+                    poly = sp.Poly(expr, x)
+                    degree = poly.degree()
+            except:
+                # Not a polynomial, likely transcendental
+                degree = 100  # Force numeric for transcendental
+
+            # Use numeric for high-degree (>4) or transcendental functions
+            if degree > 4 or any(func in str(expr) for func in ['sin', 'cos', 'tan', 'exp', 'log']):
+                method = "numpy"
+            else:
+                method = "sympy"
+
+        if method == "sympy":
             x = sp.Symbol(variable)
             # Parse equation
             expr = sp.sympify(equation)

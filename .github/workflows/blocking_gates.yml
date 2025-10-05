@@ -1,0 +1,247 @@
+name: 🚨 BLOCKING GATES - Critical Fake Detection
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  blocking-gates:
+    runs-on: ubuntu-latest
+    name: 🚨 BLOCKING GATES - No Merges Until Fixed
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run Critic Agent Analysis
+      run: |
+        echo "🚨 RUNNING CRITIC AGENT - BLOCKING GATES ACTIVE"
+        python3 critic_agent.py --project-root . --output blocking_report.json
+        echo "Critic Agent analysis complete"
+    
+    - name: Check for Critical Fakes
+      run: |
+        echo "🔍 CHECKING FOR CRITICAL FAKES..."
+        
+        # Check if report exists
+        if [ ! -f blocking_report.json ]; then
+          echo "❌ CRITICAL: Critic Agent failed to generate report"
+          exit 1
+        fi
+        
+        # Parse the report
+        python3 -c "
+        import json
+        import sys
+        
+        try:
+            with open('blocking_report.json', 'r') as f:
+                report = json.load(f)
+        except Exception as e:
+            print(f'❌ CRITICAL: Cannot parse critic report: {e}')
+            sys.exit(1)
+        
+        # Check verdict
+        verdict = report.get('verdict', 'UNKNOWN')
+        confidence = report.get('confidence', 0)
+        total_issues = report.get('total_issues', 0)
+        blocking_issues = report.get('blocking_issues', 0)
+        
+        print(f'📊 VERDICT: {verdict}')
+        print(f'🎯 CONFIDENCE: {confidence:.1%}')
+        print(f'📈 TOTAL ISSUES: {total_issues}')
+        print(f'🔴 BLOCKING ISSUES: {blocking_issues}')
+        
+        # Check for critical categories
+        issues_by_category = report.get('issues_by_category', {})
+        critical_categories = ['SECURITY', 'MATH', 'PHYSICS', 'LOGIC']
+        
+        for category in critical_categories:
+            count = issues_by_category.get(category, 0)
+            if count > 0:
+                print(f'⚠️  {category}: {count} issues')
+        
+        # BLOCKING CONDITIONS
+        if verdict == 'REJECTED' and confidence >= 0.8:
+            print('🚨 BLOCKING GATE: VERDICT REJECTED WITH HIGH CONFIDENCE')
+            print('❌ NO MERGES ALLOWED - CRITICAL FAKES DETECTED')
+            sys.exit(1)
+        
+        if blocking_issues > 0:
+            print('🚨 BLOCKING GATE: BLOCKING ISSUES DETECTED')
+            print('❌ NO MERGES ALLOWED - BLOCKING ISSUES MUST BE FIXED')
+            sys.exit(1)
+        
+        if total_issues > 20:
+            print('🚨 BLOCKING GATE: TOO MANY ISSUES DETECTED')
+            print('❌ NO MERGES ALLOWED - EXCESSIVE ISSUES MUST BE RESOLVED')
+            sys.exit(1)
+        
+        print('✅ BLOCKING GATES: PASSED')
+        print('✅ MERGES ALLOWED - NO CRITICAL FAKES DETECTED')
+        "
+    
+    - name: Test Critical Functionality
+      run: |
+        echo "🧪 TESTING CRITICAL FUNCTIONALITY..."
+        
+        python3 -c "
+        import sys
+        sys.path.insert(0, '.')
+        
+        # Test 1: Memory System
+        print('1. Testing Memory System...')
+        try:
+            from agents.math_agent import MathAgent
+            agent = MathAgent()
+            result = agent.execute_with_learning({'type': 'equation', 'equation': 'x**2 - 4', 'variable': 'x'})
+            print(f'   Memory test: {\"SUCCESS\" if result.success else \"FAILED\"}')
+        except Exception as e:
+            print(f'   Memory test: FAILED - {e}')
+            sys.exit(1)
+        
+        # Test 2: Hybrid Strategy
+        print('2. Testing Hybrid Strategy...')
+        try:
+            result = agent.execute_with_learning({'type': 'equation', 'equation': 'x**2 - 9', 'variable': 'x'})
+            method = result.output.get('method', 'UNKNOWN')
+            is_hybrid = method == 'both'
+            print(f'   Hybrid test: {\"PASS\" if is_hybrid else \"FAIL - Always uses \" + method}')
+            if not is_hybrid:
+                print('   ❌ BLOCKING: Hybrid strategy is fake')
+                sys.exit(1)
+        except Exception as e:
+            print(f'   Hybrid test: FAILED - {e}')
+            sys.exit(1)
+        
+        # Test 3: FDTD Agent
+        print('3. Testing FDTD Agent...')
+        try:
+            from agents.specialized.fdtd_agent import FDTDAgent
+            fdtd_agent = FDTDAgent()
+            result = fdtd_agent.execute_with_learning({'type': 'waveguide', 'width': 0.5, 'wavelength': 1.55})
+            has_simulation = 'simulation_results' in result.output
+            print(f'   FDTD test: {\"PASS\" if has_simulation else \"FAIL - No actual simulation\"}')
+            if not has_simulation:
+                print('   ❌ BLOCKING: FDTD simulations are fake')
+                sys.exit(1)
+        except Exception as e:
+            print(f'   FDTD test: FAILED - {e}')
+            sys.exit(1)
+        
+        # Test 4: Workflow Orchestrator
+        print('4. Testing Workflow Orchestrator...')
+        try:
+            from workflows.orchestrator import WorkflowOrchestrator
+            orchestrator = WorkflowOrchestrator()
+            agent_count = len(orchestrator.agents)
+            print(f'   Orchestrator test: {\"PASS\" if agent_count > 0 else \"FAIL - 0 agents registered\"}')
+            if agent_count == 0:
+                print('   ❌ BLOCKING: Workflow orchestrator is empty shell')
+                sys.exit(1)
+        except Exception as e:
+            print(f'   Orchestrator test: FAILED - {e}')
+            sys.exit(1)
+        
+        print('✅ ALL CRITICAL FUNCTIONALITY TESTS PASSED')
+        "
+    
+    - name: Upload Blocking Report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: blocking-gates-report
+        path: blocking_report.json
+    
+    - name: Comment on PR with Blocking Status
+      if: github.event_name == 'pull_request' && failure()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "🚨 COMMENTING ON PR - BLOCKING GATES FAILED"
+        
+        python3 -c "
+        import json
+        import os
+        
+        # Read blocking report
+        try:
+            with open('blocking_report.json', 'r') as f:
+                report = json.load(f)
+        except:
+            report = {'verdict': 'UNKNOWN', 'total_issues': 0, 'blocking_issues': 0}
+        
+        # Generate blocking comment
+        comment = f'''## 🚨 BLOCKING GATES FAILED - NO MERGES ALLOWED
+        
+        **Verdict:** {report.get('verdict', 'UNKNOWN')}  
+        **Confidence:** {report.get('confidence', 0):.1%}  
+        **Total Issues:** {report.get('total_issues', 0)}  
+        **Blocking Issues:** {report.get('blocking_issues', 0)}
+        
+        ### 🚨 CRITICAL FAKES DETECTED
+        
+        The Critic Agent has detected critical fakes and system failures that **BLOCK ALL MERGES**:
+        
+        - ❌ **Memory System Broken** - Cannot save/load data
+        - ❌ **Hybrid Strategy Fake** - Never uses both methods  
+        - ❌ **FDTD Simulations Fake** - No actual simulation
+        - ❌ **Workflow Orchestrator Empty** - 0 agents registered
+        - ❌ **Strategy Evolution Fake** - All evolved strategies unused
+        - ❌ **Demo Videos Fake** - Binary data masquerading as video
+        - ❌ **MCP Integration Missing** - Claims are false
+        - ❌ **Tidy3D Integration Fake** - No actual simulation calls
+        - ❌ **Self-Improvement Fraudulent** - No actual learning
+        
+        ### 🚨 BLOCKING CONDITIONS
+        
+        **NO MERGES ALLOWED** until these critical issues are resolved:
+        
+        1. Fix memory system JSON serialization
+        2. Implement actual hybrid strategy logic
+        3. Add real FDTD simulations
+        4. Implement workflow orchestration
+        5. Remove all fake claims and demonstrations
+        
+        ### 📋 REQUIRED ACTIONS
+        
+        - [ ] Fix all critical system failures
+        - [ ] Implement actual functionality
+        - [ ] Remove fake demonstrations
+        - [ ] Add real tests and validation
+        - [ ] Pass all blocking gate tests
+        
+        **This PR is BLOCKED until all critical fakes are resolved.**
+        
+        [View detailed report](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}})
+        '''
+        
+        # Write comment to file
+        with open('blocking-comment.md', 'w') as f:
+            f.write(comment)
+        
+        print('✅ Blocking comment prepared')
+        "
+        
+        # Post comment using GitHub CLI
+        gh pr comment ${{ github.event.pull_request.number }} --body-file blocking-comment.md
+    
+    - name: Create Critical Fake Issues
+      if: failure()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "🚨 CREATING CRITICAL FAKE ISSUES..."
+        python3 scripts/create_critical_fake_issues.py
