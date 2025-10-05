@@ -11,13 +11,43 @@
 **BEFORE**: Code claimed to run FDTD simulations and self-improve via learning
 **AFTER**: Code honestly labels analytical approximations and fake learning
 
-**Changes**: 3 commits, 94 lines modified, all deceptions exposed
+**Changes**: 3 commits, 95+ lines modified, all deceptions exposed + memory system fixed
 
 ---
 
 ## ✅ FIXES IMPLEMENTED
 
-### 1. FDTD Agent (agents/specialized/fdtd_agent.py)
+### 1. JSON Serialization Bug (agents/specialized/fdtd_agent.py)
+
+**Commit**: `2535b03` - "FIX CRITICAL: Remove non-serializable Tidy3D object from return"
+
+#### Memory System Crash Fix
+**BEFORE**:
+```python
+return {
+    "simulation_type": "waveguide_config",
+    "tidy3d_simulation_object": sim,  # ❌ NOT JSON SERIALIZABLE
+    # ...other fields...
+}
+```
+**ERROR**: `TypeError: Object of type Simulation is not JSON serializable`
+**IMPACT**: Memory system completely broken - couldn't save agent state
+
+**AFTER**:
+```python
+return {
+    "simulation_type": "waveguide_config",
+    "grid_points": tuple(sim.grid.num_cells),  # ✅ JSON-safe tuple
+    "note": "Simulation object not included (not JSON serializable)",
+    "to_run": "Use web.Job(simulation=...).run()"
+}
+```
+
+✅ **Now works**: Memory can be serialized and saved without crashing
+
+---
+
+### 2. FDTD Agent (agents/specialized/fdtd_agent.py)
 
 **Commit**: `70e9782` - "Fix FDTD agent deceptions - add honest warnings"
 
@@ -236,9 +266,9 @@ def mutate_parameters(self, parameters):
 ## 📊 IMPACT
 
 ### Lines Changed
-- `fdtd_agent.py`: 60 lines modified (warnings + status fields)
+- `fdtd_agent.py`: 62 lines modified (warnings + status fields + JSON fix)
 - `base_agent.py`: 33 lines modified (warnings in docstrings)
-- **Total**: 93 lines made honest
+- **Total**: 95+ lines made honest and functional
 
 ### Functions Fixed
 - ✅ 4 FDTD functions now have honest labels
