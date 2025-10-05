@@ -158,6 +158,7 @@ class FDTDAgent(BaseAgent):
 
         # ⚠️ IMPORTANT: This returns config only, NOT simulation results!
         # To get real results, use: web.Job(simulation=sim).run()
+        # NOTE: We DON'T return the sim object because it's not JSON serializable
         return {
             "simulation_type": "waveguide_config",
             "status": "NOT_RUN",  # Honest status
@@ -168,9 +169,9 @@ class FDTDAgent(BaseAgent):
                 "wavelength": wavelength,
                 "length": length
             },
-            "tidy3d_simulation_object": sim,  # The actual sim object
-            "grid_points": sim.grid.num_cells,
-            "to_run": "Use web.Job(simulation=result['tidy3d_simulation_object']).run()",
+            "grid_points": tuple(sim.grid.num_cells),  # Convert to JSON-safe tuple
+            "to_run": "See examples/real_tidy3d_waveguide.py for how to actually run FDTD",
+            "note": "Simulation object not included (not JSON serializable)"
         }
 
     def _simulate_ring_resonator(self, task: Dict[str, Any], strategy: Strategy) -> Dict[str, Any]:
