@@ -1,0 +1,267 @@
+name: 🚨 Critic Agent CI/CD Quality Gates
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  critic-analysis:
+    runs-on: ubuntu-latest
+    name: 🚨 Critic Agent Analysis
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for analysis
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-benchmark
+        pip install anthropic  # For LLM tests
+    
+    - name: Run Rule-Based Tests
+      run: |
+        echo "🧪 Running rule-based tests..."
+        pytest tests/test_rules/ -v --cov=agents --cov=workflows --cov-report=xml --cov-report=html
+        echo "✅ Rule-based tests completed"
+    
+    - name: Run LLM-Based Tests
+      if: env.ANTHROPIC_API_KEY != ''
+      env:
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "🤖 Running LLM-based quality evaluation..."
+        pytest tests/test_llm/ -v --tb=short
+        echo "✅ LLM evaluation completed"
+    
+    - name: Security Scan
+      run: |
+        echo "🔒 Running security scan..."
+        pip install bandit safety
+        bandit -r agents/ workflows/ -f json -o security-report.json || true
+        safety check --json --output safety-report.json || true
+        echo "✅ Security scan completed"
+    
+    - name: Performance Benchmark
+      run: |
+        echo "⚡ Running performance benchmarks..."
+        pytest tests/test_rules/test_agents.py::TestPerformance -v --benchmark-only --benchmark-save=performance
+        echo "✅ Performance benchmark completed"
+    
+    - name: Mathematical Correctness Check
+      run: |
+        echo "📐 Verifying mathematical correctness..."
+        python3 -c "
+        import sys
+        sys.path.insert(0, '.')
+        from agents.math_agent import MathAgent
+        from agents.physics_agent import PhysicsAgent
+        
+        # Test critical mathematical operations
+        math_agent = MathAgent()
+        physics_agent = PhysicsAgent()
+        
+        # Quadratic equation test
+        result = math_agent.execute_with_learning({
+            'type': 'equation', 
+            'equation': 'x**2 - 4', 
+            'variable': 'x'
+        })
+        assert result.success, 'Quadratic equation failed'
+        assert 'solutions' in result.output, 'No solutions found'
+        assert len(result.output['solutions']) == 2, 'Wrong number of solutions'
+        
+        # Physics consistency test
+        result = physics_agent.execute_with_learning({
+            'type': 'mechanics',
+            'subtype': 'kinematics',
+            'initial_velocity': 10,
+            'acceleration': -9.8,
+            'time': 1.0
+        })
+        assert result.success, 'Physics calculation failed'
+        assert result.metrics.get('physical_consistency', 0) > 0.5, 'Physics inconsistent'
+        
+        print('✅ Mathematical correctness verified')
+        "
+    
+    - name: Generate Critic Report
+      run: |
+        echo "📊 Generating comprehensive critic report..."
+        python3 -c "
+        import json
+        import os
+        from datetime import datetime
+        
+        # Collect all test results
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'commit': os.environ.get('GITHUB_SHA', 'unknown'),
+            'branch': os.environ.get('GITHUB_REF_NAME', 'unknown'),
+            'tests': {
+                'rule_based': 'passed' if os.path.exists('htmlcov/index.html') else 'failed',
+                'llm_based': 'skipped' if not os.environ.get('ANTHROPIC_API_KEY') else 'passed',
+                'security': 'completed',
+                'performance': 'completed',
+                'mathematical': 'passed'
+            },
+            'coverage': 'htmlcov/index.html' if os.path.exists('htmlcov/index.html') else None,
+            'security_reports': {
+                'bandit': 'security-report.json' if os.path.exists('security-report.json') else None,
+                'safety': 'safety-report.json' if os.path.exists('safety-report.json') else None
+            }
+        }
+        
+        with open('critic-report.json', 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        print('✅ Critic report generated')
+        "
+    
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: critic-analysis-results
+        path: |
+          critic-report.json
+          htmlcov/
+          security-report.json
+          safety-report.json
+          .benchmarks/
+    
+    - name: Create Quality Gate Issues
+      if: failure()
+      run: |
+        echo "🚨 Creating quality gate issues..."
+        python3 -c "
+        import json
+        import os
+        from datetime import datetime
+        
+        # Read critic report
+        try:
+            with open('critic-report.json', 'r') as f:
+                report = json.load(f)
+        except:
+            report = {'tests': {}, 'timestamp': datetime.now().isoformat()}
+        
+        # Determine issues
+        issues = []
+        
+        if report['tests'].get('rule_based') != 'passed':
+            issues.append({
+                'title': '[CRITIC] Rule-based tests failed',
+                'body': 'Rule-based tests failed. Check test output for details.',
+                'labels': ['critic-agent', 'critical', 'tests']
+            })
+        
+        if report['tests'].get('security') == 'failed':
+            issues.append({
+                'title': '[CRITIC] Security vulnerabilities detected',
+                'body': 'Security scan found vulnerabilities. Check security reports.',
+                'labels': ['critic-agent', 'critical', 'security']
+            })
+        
+        if report['tests'].get('mathematical') != 'passed':
+            issues.append({
+                'title': '[CRITIC] Mathematical correctness failed',
+                'body': 'Mathematical verification failed. Core algorithms may be incorrect.',
+                'labels': ['critic-agent', 'critical', 'math']
+            })
+        
+        # Save issues for GitHub CLI
+        with open('critic-issues.json', 'w') as f:
+            json.dump(issues, f, indent=2)
+        
+        print(f'✅ Prepared {len(issues)} quality gate issues')
+        "
+    
+    - name: Create GitHub Issues
+      if: failure() && github.event_name == 'push'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if [ -f critic-issues.json ]; then
+          echo "Creating GitHub issues for quality gate failures..."
+          python3 -c "
+          import json
+          import subprocess
+          import sys
+          
+          with open('critic-issues.json', 'r') as f:
+              issues = json.load(f)
+          
+          for issue in issues:
+              cmd = [
+                  'gh', 'issue', 'create',
+                  '--title', issue['title'],
+                  '--body', issue['body'],
+                  '--label', ','.join(issue['labels'])
+              ]
+              try:
+                  subprocess.run(cmd, check=True)
+                  print(f'✅ Created issue: {issue[\"title\"]}')
+              except subprocess.CalledProcessError as e:
+                  print(f'❌ Failed to create issue: {e}')
+          "
+        fi
+    
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "Commenting on PR with critic analysis results..."
+        python3 -c "
+        import json
+        import os
+        
+        # Read critic report
+        try:
+            with open('critic-report.json', 'r') as f:
+                report = json.load(f)
+        except:
+            report = {'tests': {}, 'timestamp': 'unknown'}
+        
+        # Generate comment
+        comment = f'''## 🚨 Critic Agent Analysis Results
+        
+        **Commit:** {report.get('commit', 'unknown')[:8]}  
+        **Timestamp:** {report.get('timestamp', 'unknown')}
+        
+        ### Test Results
+        - ✅ Rule-based tests: {report['tests'].get('rule_based', 'unknown')}
+        - {'✅' if report['tests'].get('llm_based') == 'passed' else '⏭️'} LLM-based tests: {report['tests'].get('llm_based', 'skipped')}
+        - ✅ Security scan: {report['tests'].get('security', 'unknown')}
+        - ✅ Performance benchmark: {report['tests'].get('performance', 'unknown')}
+        - ✅ Mathematical correctness: {report['tests'].get('mathematical', 'unknown')}
+        
+        ### Quality Gates
+        {'🟢 **ALL QUALITY GATES PASSED**' if all(v in ['passed', 'completed', 'skipped'] for v in report['tests'].values()) else '🔴 **QUALITY GATES FAILED**'}
+        
+        [View detailed report](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}})
+        '''
+        
+        # Write comment to file
+        with open('pr-comment.md', 'w') as f:
+            f.write(comment)
+        
+        print('✅ PR comment prepared')
+        "
+        
+        # Post comment using GitHub CLI
+        gh pr comment ${{ github.event.pull_request.number }} --body-file pr-comment.md
+

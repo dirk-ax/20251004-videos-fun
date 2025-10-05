@@ -40,8 +40,9 @@ class MathVisualizer:
         for sol in solutions:
             try:
                 numeric_solutions.append(float(complex(sol).real))
-            except:
-                pass
+            except (ValueError, TypeError, AttributeError):
+                # Skip non-numeric solutions
+                continue
 
         if numeric_solutions:
             x_min = min(numeric_solutions) - 5
@@ -304,12 +305,43 @@ class MathVisualizer:
         ax.set_facecolor('#0f0f0f')
         ax.axis('off')
 
-        # This would use networkx for layout
-        # Placeholder for network visualization
+        # Create network graph visualization
+        try:
+            import networkx as nx
 
-        ax.text(0.5, 0.5, "Agent Network Visualization\n(Network Graph)",
-               transform=ax.transAxes, ha='center', va='center',
-               fontsize=18, color='cyan', fontweight='bold')
+            # Create a simple agent network graph
+            G = nx.DiGraph()
+            agents = ['Math', 'Physics', 'Engineering', 'FDTD']
+            G.add_nodes_from(agents)
+            G.add_edges_from([
+                ('Math', 'Physics'),
+                ('Physics', 'Engineering'),
+                ('Physics', 'FDTD'),
+                ('Math', 'FDTD')
+            ])
+
+            pos = nx.spring_layout(G, seed=42)
+
+            # Draw nodes
+            nx.draw_networkx_nodes(G, pos, node_color='cyan', node_size=2000,
+                                  alpha=0.8, ax=ax)
+
+            # Draw edges
+            nx.draw_networkx_edges(G, pos, edge_color='#4ade80', width=2,
+                                  alpha=0.6, arrows=True, arrowsize=20, ax=ax)
+
+            # Draw labels
+            nx.draw_networkx_labels(G, pos, font_size=12, font_color='white',
+                                   font_weight='bold', ax=ax)
+
+            ax.set_title("Agent Network Visualization", fontsize=18, color='cyan',
+                        fontweight='bold', pad=20)
+
+        except ImportError:
+            # Fallback if networkx not available
+            ax.text(0.5, 0.5, "Agent Network Visualization\n(NetworkX required)",
+                   transform=ax.transAxes, ha='center', va='center',
+                   fontsize=18, color='cyan', fontweight='bold')
 
         output_file = self.output_dir / f"agent_network_{int(np.random.random()*10000)}.png"
         plt.savefig(output_file, dpi=150, facecolor='#0a0a0a', bbox_inches='tight')

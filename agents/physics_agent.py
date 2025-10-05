@@ -304,7 +304,18 @@ class PhysicsAgent(BaseAgent):
 
             if "velocity" in output:
                 total_checks += 1
-                if abs(output["velocity"]) < self.CONSTANTS['c']:
+                # Handle both numeric and symbolic velocity values
+                velocity_val = output["velocity"]
+                if isinstance(velocity_val, str):
+                    # If symbolic, check for numeric velocity_at_time
+                    if "velocity_at_time" in output:
+                        velocity_val = output["velocity_at_time"]
+                    else:
+                        # Skip check for purely symbolic results
+                        total_checks -= 1
+                        velocity_val = None
+
+                if velocity_val is not None and abs(float(velocity_val)) < self.CONSTANTS['c']:
                     consistency_checks += 1
 
             if "energy" in output or "kinetic_energy" in output:

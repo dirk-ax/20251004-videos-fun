@@ -159,8 +159,9 @@ class MathAgent(BaseAgent):
             numeric_val = None
             try:
                 numeric_val = float(result.evalf())
-            except:
-                pass
+            except (ValueError, TypeError, AttributeError):
+                # Symbolic result cannot be evaluated to float (e.g., contains symbols)
+                numeric_val = None
             return {
                 "method": "symbolic",
                 "type": "definite",
@@ -200,8 +201,9 @@ class MathAgent(BaseAgent):
                         value = expr.subs(x, sol)
                         if abs(complex(value)) < 1e-10:
                             verified += 1
-                    except:
-                        pass
+                    except (ValueError, TypeError, AttributeError, SyntaxError):
+                        # Solution verification failed (symbolic or complex expression)
+                        continue
 
                 if solutions:
                     metrics["accuracy"] = verified / len(solutions)
