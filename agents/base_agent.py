@@ -93,6 +93,13 @@ class BaseAgent(ABC):
             # Create default strategy
             return self.create_strategy("default", self.get_default_parameters())
 
+        # Prefer hybrid strategy if available and all strategies are untested
+        all_untested = all(s.total_uses == 0 for s in self.strategies.values())
+        if all_untested:
+            for strategy in self.strategies.values():
+                if strategy.parameters.get("method") == "both":
+                    return strategy
+
         # Score strategies based on multiple factors
         def score_strategy(s: Strategy) -> float:
             if s.total_uses == 0:
@@ -193,64 +200,13 @@ class BaseAgent(ABC):
 
     def evolve_strategies(self):
         """
-        Create new strategies by mutating successful ones.
+        Placeholder for strategy evolution.
 
-        ⚠️ WARNING: This has a major flaw - evolved strategies are created but
-        rarely used because:
-        1. Epsilon-greedy selection favors high-use strategies
-        2. New strategies start with 0 uses
-        3. They never get a chance to prove themselves
-
-        Result: Dozens of "evolved" strategies with total_uses=0 accumulate.
-        This is FAKE LEARNING - strategies are generated but not validated.
-
-        TODO: Fix by forcing exploration of new strategies or using
-        multi-armed bandit algorithms (UCB1, Thompson sampling).
+        Note: Self-improvement features were removed as they were not functional.
+        Strategies are defined at initialization and do not evolve automatically.
+        This method exists to maintain compatibility with existing code.
         """
-        if len(self.task_history) < 10:
-            return  # Not enough data yet
-
-        # Find top performing strategy
-        top_strategies = sorted(
-            self.strategies.values(),
-            key=lambda s: s.success_rate() if s.total_uses > 3 else 0,
-            reverse=True
-        )[:3]
-
-        for strategy in top_strategies:
-            if strategy.success_rate() > 0.7 and strategy.total_uses > 5:
-                # Mutate parameters (random mutations - not gradient-based!)
-                new_params = self.mutate_parameters(strategy.parameters)
-                new_strategy = self.create_strategy(f"{strategy.name}_evolved", new_params)
-
-                # ⚠️ PROBLEM: This new strategy will likely never get used!
-                # It starts with total_uses=0 and success_rate undefined
-
-    def mutate_parameters(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Mutate strategy parameters for evolution.
-
-        ⚠️ WARNING: This is RANDOM mutation, not intelligent optimization.
-        - No gradient information
-        - No domain knowledge
-        - Just adds Gaussian noise
-        - Parameters might become invalid (negative values, out of range)
-
-        This is NOT real evolutionary optimization or reinforcement learning.
-        """
-        import random
-        import copy
-
-        new_params = copy.deepcopy(parameters)
-
-        for key, value in new_params.items():
-            if isinstance(value, (int, float)):
-                # Add random Gaussian noise (±10%)
-                mutation = random.gauss(0, 0.1) * value
-                new_params[key] = value + mutation
-                # ⚠️ No bounds checking! Could create invalid values
-
-        return new_params
+        pass
 
     def save_memory(self):
         """Persist agent memory to disk."""
