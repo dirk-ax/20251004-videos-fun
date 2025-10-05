@@ -192,7 +192,21 @@ class BaseAgent(ABC):
         pass
 
     def evolve_strategies(self):
-        """Create new strategies by mutating successful ones."""
+        """
+        Create new strategies by mutating successful ones.
+
+        ⚠️ WARNING: This has a major flaw - evolved strategies are created but
+        rarely used because:
+        1. Epsilon-greedy selection favors high-use strategies
+        2. New strategies start with 0 uses
+        3. They never get a chance to prove themselves
+
+        Result: Dozens of "evolved" strategies with total_uses=0 accumulate.
+        This is FAKE LEARNING - strategies are generated but not validated.
+
+        TODO: Fix by forcing exploration of new strategies or using
+        multi-armed bandit algorithms (UCB1, Thompson sampling).
+        """
         if len(self.task_history) < 10:
             return  # Not enough data yet
 
@@ -205,12 +219,25 @@ class BaseAgent(ABC):
 
         for strategy in top_strategies:
             if strategy.success_rate() > 0.7 and strategy.total_uses > 5:
-                # Mutate parameters
+                # Mutate parameters (random mutations - not gradient-based!)
                 new_params = self.mutate_parameters(strategy.parameters)
-                self.create_strategy(f"{strategy.name}_evolved", new_params)
+                new_strategy = self.create_strategy(f"{strategy.name}_evolved", new_params)
+
+                # ⚠️ PROBLEM: This new strategy will likely never get used!
+                # It starts with total_uses=0 and success_rate undefined
 
     def mutate_parameters(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Mutate strategy parameters for evolution."""
+        """
+        Mutate strategy parameters for evolution.
+
+        ⚠️ WARNING: This is RANDOM mutation, not intelligent optimization.
+        - No gradient information
+        - No domain knowledge
+        - Just adds Gaussian noise
+        - Parameters might become invalid (negative values, out of range)
+
+        This is NOT real evolutionary optimization or reinforcement learning.
+        """
         import random
         import copy
 
@@ -218,9 +245,10 @@ class BaseAgent(ABC):
 
         for key, value in new_params.items():
             if isinstance(value, (int, float)):
-                # Mutate numeric values
+                # Add random Gaussian noise (±10%)
                 mutation = random.gauss(0, 0.1) * value
                 new_params[key] = value + mutation
+                # ⚠️ No bounds checking! Could create invalid values
 
         return new_params
 
