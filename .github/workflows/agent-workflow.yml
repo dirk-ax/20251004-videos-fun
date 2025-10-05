@@ -1,0 +1,196 @@
+name: AI Agent Workflow Orchestration
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      agent_task:
+        description: 'Agent task specification'
+        required: true
+        type: string
+      specialized_tools:
+        description: 'Required specialized tools (comma-separated)'
+        required: false
+        type: string
+
+jobs:
+  test-rule-based:
+    name: Rule-Based Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run rule-based tests
+        run: |
+          pytest tests/test_rules/ -v --cov=agents --cov=workflows --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+
+  test-llm-based:
+    name: LLM-Based Evaluation Tests
+    runs-on: ubuntu-latest
+    needs: test-rule-based
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest anthropic
+
+      - name: Run LLM-based tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          pytest tests/test_llm/ -v --tb=short
+
+  agent-execution:
+    name: Execute Agent Workflow
+    runs-on: ubuntu-latest
+    needs: [test-rule-based, test-llm-based]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Execute workflow
+        run: |
+          python main.py --automated --task="${{ github.event.inputs.agent_task || 'default' }}"
+
+      - name: Generate visualizations
+        run: |
+          python scripts/generate_visuals.py --duration=30
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: agent-outputs
+          path: |
+            outputs/
+            visualizations/
+            memory/
+
+  specialized-fdtd-agent:
+    name: FDTD Simulation Agent
+    runs-on: ubuntu-latest
+    needs: test-rule-based
+    if: contains(github.event.inputs.specialized_tools, 'fdtd') || github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install FDTD tools
+        run: |
+          pip install -r requirements.txt
+          pip install tidy3d
+
+      - name: Execute FDTD simulations
+        env:
+          TIDY3D_API_KEY: ${{ secrets.TIDY3D_API_KEY }}
+          AXIOMATIC_API_KEY: ${{ secrets.AXIOMATIC_API_KEY }}
+        run: |
+          python agents/specialized/fdtd_agent.py --contract=${{ github.event.number || 'main' }}
+
+      - name: Upload FDTD results
+        uses: actions/upload-artifact@v3
+        with:
+          name: fdtd-simulations
+          path: outputs/fdtd/
+
+  create-demo-video:
+    name: Create Demo Video
+    runs-on: ubuntu-latest
+    needs: [agent-execution, specialized-fdtd-agent]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install video tools
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Generate 30-45s demo video
+        run: |
+          python scripts/create_demo_video.py --duration=30 --highlight-learning
+
+      - name: Upload video
+        uses: actions/upload-artifact@v3
+        with:
+          name: demo-video
+          path: outputs/demos/*.mp4
+
+  performance-metrics:
+    name: Agent Performance Metrics
+    runs-on: ubuntu-latest
+    needs: agent-execution
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download execution artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: agent-outputs
+
+      - name: Analyze performance
+        run: |
+          python scripts/analyze_performance.py --output=metrics.json
+
+      - name: Create performance report
+        run: |
+          python scripts/create_report.py --input=metrics.json --format=markdown > PERFORMANCE_REPORT.md
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('PERFORMANCE_REPORT.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
