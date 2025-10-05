@@ -71,7 +71,17 @@ class FDTDAgent(BaseAgent):
             raise ValueError(f"Unknown simulation type: {simulation_type}")
 
     def _simulate_waveguide(self, task: Dict[str, Any], strategy: Strategy) -> Dict[str, Any]:
-        """Simulate basic waveguide structure."""
+        """
+        Create Tidy3D waveguide simulation configuration.
+
+        ⚠️ WARNING: This creates a simulation object but does NOT run it.
+        To run actual FDTD, you need:
+        1. Tidy3D API key configured
+        2. Submit to cloud: web.Job(simulation=sim).run()
+        3. Wait for electromagnetic solver to complete
+
+        This function returns CONFIGURATION ONLY, not simulation results.
+        """
 
         # Extract parameters
         width = task.get("width", 0.5)  # μm
@@ -146,74 +156,102 @@ class FDTDAgent(BaseAgent):
             )
         )
 
-        # Return simulation config (would run on Tidy3D cloud in production)
+        # ⚠️ IMPORTANT: This returns config only, NOT simulation results!
+        # To get real results, use: web.Job(simulation=sim).run()
         return {
-            "simulation": "waveguide",
+            "simulation_type": "waveguide_config",
+            "status": "NOT_RUN",  # Honest status
+            "warning": "Configuration only - no FDTD computation performed",
             "parameters": {
                 "width": width,
                 "thickness": thickness,
                 "wavelength": wavelength,
                 "length": length
             },
-            "strategy": strategy.name,
+            "tidy3d_simulation_object": sim,  # The actual sim object
             "grid_points": sim.grid.num_cells,
-            "estimated_runtime": "fast",
-            "config_valid": True
+            "to_run": "Use web.Job(simulation=result['tidy3d_simulation_object']).run()",
         }
 
     def _simulate_ring_resonator(self, task: Dict[str, Any], strategy: Strategy) -> Dict[str, Any]:
-        """Simulate ring resonator."""
+        """
+        ❌ NOT IMPLEMENTED - Returns fake analytical data.
+
+        This function does NOT run FDTD. It returns made-up resonance values.
+        To implement: Create Tidy3D ring resonator geometry and run actual simulation.
+        """
         radius = task.get("radius", 5)  # μm
         gap = task.get("gap", 0.2)  # μm
         wavelength = task.get("wavelength", 1.55)  # μm
 
         return {
-            "simulation": "ring_resonator",
+            "status": "FAKE_DATA",
+            "warning": "❌ NOT REAL FDTD - Analytical approximation only",
+            "simulation_type": "ring_resonator_analytical",
             "parameters": {
                 "radius": radius,
                 "gap": gap,
                 "wavelength": wavelength
             },
-            "resonant_wavelengths": [wavelength * (1 + i * 0.01) for i in range(-2, 3)],
-            "Q_factor": 10000,
-            "FSR": 0.1,  # Free spectral range in μm
-            "strategy": strategy.name
+            "resonant_wavelengths": [wavelength * (1 + i * 0.01) for i in range(-2, 3)],  # FAKE
+            "Q_factor": 10000,  # FAKE - hardcoded
+            "FSR": 0.1,  # FAKE - not calculated from geometry
+            "note": "Replace this with real Tidy3D ring resonator simulation"
         }
 
     def _simulate_mzi(self, task: Dict[str, Any], strategy: Strategy) -> Dict[str, Any]:
-        """Simulate Mach-Zehnder Interferometer."""
+        """
+        ⚠️ ANALYTICAL ONLY - NOT FDTD simulation.
+
+        This uses simple phase calculation, not electromagnetic field solving.
+        Does not account for: coupling losses, mode mismatch, waveguide dispersion, etc.
+        """
         arm_length_diff = task.get("arm_length_diff", 10)  # μm
         wavelength = task.get("wavelength", 1.55)  # μm
 
-        # Calculate extinction ratio
+        # Calculate extinction ratio (simplified analytical model)
         phase_diff = 2 * np.pi * arm_length_diff / wavelength
         extinction_ratio = 20 * np.log10(np.abs(np.cos(phase_diff / 2)))
 
         return {
-            "simulation": "mzi",
+            "status": "ANALYTICAL",
+            "warning": "⚠️ Simple phase model - NOT full FDTD",
+            "simulation_type": "mzi_analytical",
             "parameters": {
                 "arm_length_diff": arm_length_diff,
                 "wavelength": wavelength
             },
-            "extinction_ratio_dB": extinction_ratio,
+            "extinction_ratio_dB": extinction_ratio,  # From simple formula
             "phase_difference": phase_diff,
-            "strategy": strategy.name
+            "note": "Does not include coupling, dispersion, or field effects"
         }
 
     def _simulate_photonic_crystal(self, task: Dict[str, Any], strategy: Strategy) -> Dict[str, Any]:
-        """Simulate photonic crystal structure."""
+        """
+        ❌ COMPLETELY FAKE - Returns hardcoded bandgap values.
+
+        Real photonic crystal simulation requires:
+        - 3D periodic structure geometry
+        - Band structure calculation
+        - Bloch mode analysis
+        - Hours of computation time
+
+        This function just returns made-up numbers.
+        """
         lattice_constant = task.get("lattice_constant", 0.4)  # μm
         hole_radius = task.get("hole_radius", 0.12)  # μm
 
         return {
-            "simulation": "photonic_crystal",
+            "status": "FAKE_DATA",
+            "warning": "❌ COMPLETELY FAKE - Hardcoded values, NO computation",
+            "simulation_type": "photonic_crystal_fake",
             "parameters": {
                 "lattice_constant": lattice_constant,
                 "hole_radius": hole_radius
             },
-            "bandgap_center": 1.55,
-            "bandgap_width": 0.2,
-            "strategy": strategy.name
+            "bandgap_center": 1.55,  # HARDCODED - not calculated!
+            "bandgap_width": 0.2,  # HARDCODED - not calculated!
+            "note": "This is a placeholder. Requires MPB or FDTD band structure solver."
         }
 
     def evaluate_result(self, task: Dict[str, Any], output: Any) -> Dict[str, float]:
